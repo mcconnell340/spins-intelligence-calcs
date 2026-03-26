@@ -1,0 +1,19 @@
+# Secrets
+.env
+credentials.json
+token.json
+
+# Temp / cache
+.tmp/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+
+# Excel lock files (created when file is open)
+~$*.xlsx
+~$*.xls
+
+# Large files not needed by the app
+SPINS LLM Descriptions.xlsx
+adding_calculated_metrics_v2025.82.pdf
