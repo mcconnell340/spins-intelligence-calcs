@@ -235,9 +235,12 @@ st.title("SPINS Measure Builder")
 col_build, col_list = st.columns([1, 1], gap="large")
 
 
-# ── Left: Formula Builder ──────────────────────────────────────────────────────
+# ── Left: Single / Batch tabs ─────────────────────────────────────────────────
 
 with col_build:
+    tab_single, tab_batch = st.tabs(["Single", "Batch"])
+
+with tab_single:
     st.subheader("Build a Measure")
 
     measure_name = st.text_input(
@@ -368,6 +371,142 @@ with col_build:
 
         st.button("➕ Add to list", use_container_width=True, type="secondary",
                   on_click=_add_to_list)
+
+
+# ── Batch tab ──────────────────────────────────────────────────────────────────
+
+with tab_batch:
+    st.subheader("Batch Process")
+    st.caption(
+        "Enter one measure per row — or upload a CSV with `Measure Name` and `Formula` columns. "
+        "Click **Process All** to generate JSON for every row at once."
+    )
+
+    # Optional CSV upload to pre-populate the table
+    uploaded = st.file_uploader(
+        "Upload CSV (optional)", type="csv", label_visibility="collapsed",
+        key="batch_upload",
+    )
+    if uploaded is not None:
+        try:
+            up_df = pd.read_csv(uploaded)
+            # Normalise column names case-insensitively
+            up_df.columns = [c.strip() for c in up_df.columns]
+            col_map = {c.lower(): c for c in up_df.columns}
+            name_col    = col_map.get("measure name", col_map.get("name", None))
+            formula_col = col_map.get("formula", col_map.get("clean formula",
+                          col_map.get("measure calculation (clean)", None)))
+            if name_col and formula_col:
+                st.session_state["batch_rows"] = [
+                    {
+                        "Measure Name": str(r[name_col]).strip(),
+                        "Formula":      str(r[formula_col]).strip(),
+                        "Treat / as":   "division",
+                        "Format":       "Currency – auto M/B scale",
+                        "Decimals":     1,
+                    }
+                    for _, r in up_df.iterrows()
+                ]
+                st.success(f"Loaded {len(st.session_state['batch_rows'])} rows from CSV.")
+            else:
+                st.error("CSV must have 'Measure Name' and 'Formula' columns.")
+        except Exception as e:
+            st.error(f"Could not read CSV: {e}")
+
+    # Initialise blank table if nothing loaded yet
+    if "batch_rows" not in st.session_state:
+        st.session_state["batch_rows"] = [
+            {"Measure Name": "", "Formula": "", "Treat / as": "division",
+             "Format": "Currency – auto M/B scale", "Decimals": 1},
+        ] * 3
+
+    edited_batch = st.data_editor(
+        pd.DataFrame(st.session_state["batch_rows"]),
+        num_rows="dynamic",
+        use_container_width=True,
+        column_config={
+            "Treat / as": st.column_config.SelectboxColumn(
+                options=["division", "percent"], required=True,
+            ),
+            "Format": st.column_config.SelectboxColumn(
+                options=FORMAT_TYPES, required=True,
+            ),
+            "Decimals": st.column_config.SelectboxColumn(
+                options=[0, 1, 2], required=True,
+            ),
+        },
+        key="batch_editor",
+    )
+
+    if st.button("⚙ Process All", type="primary", use_container_width=True):
+        results = []
+        for _, row in edited_batch.iterrows():
+            name    = str(row.get("Measure Name", "")).strip()
+            formula = str(row.get("Formula", "")).strip()
+            if not name or not formula:
+                continue
+            div_t   = str(row.get("Treat / as", "division"))
+            fmt_t   = str(row.get("Format", "Currency – auto M/B scale"))
+            dec     = int(row.get("Decimals", 1))
+            try:
+                steps   = formula_to_steps(formula, name, div_t)
+                fmt_str = build_format_string(fmt_t, dec)
+                results.append({
+                    "Measure Name":                name,
+                    "Measure Calculation":         json.dumps(steps),
+                    "Measure Calculation (Clean)": formula,
+                    "Format":                      fmt_str,
+                    "_ok": True,
+                })
+            except Exception as e:
+                results.append({
+                    "Measure Name": name,
+                    "Measure Calculation": f"ERROR: {e}",
+                    "Measure Calculation (Clean)": formula,
+                    "Format": "",
+                    "_ok": False,
+                })
+        st.session_state["batch_results"] = results
+
+    if st.session_state.get("batch_results"):
+        results = st.session_state["batch_results"]
+        ok      = [r for r in results if r["_ok"]]
+        errors  = [r for r in results if not r["_ok"]]
+
+        st.caption(f"✓ {len(ok)} succeeded   {'  ✗ ' + str(len(errors)) + ' failed' if errors else ''}")
+
+        # Status table
+        st.dataframe(
+            pd.DataFrame([
+                {
+                    "Measure Name": r["Measure Name"],
+                    "Status": "✓ OK" if r["_ok"] else f"✗ {r['Measure Calculation']}",
+                }
+                for r in results
+            ]),
+            use_container_width=True, hide_index=True,
+        )
+
+        if ok:
+            # Download JSON (strip internal _ok flag)
+            output = [{k: v for k, v in r.items() if k != "_ok"} for r in ok]
+            st.download_button(
+                "⬇ Download JSON",
+                data=json.dumps(output, indent=2),
+                file_name="batch_measures.json",
+                mime="application/json",
+                use_container_width=True,
+            )
+            # Also offer CSV
+            buf = StringIO()
+            pd.DataFrame(output).to_csv(buf, index=False)
+            st.download_button(
+                "⬇ Download CSV",
+                data=buf.getvalue(),
+                file_name="batch_measures.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
 
 
 # ── Right: Measure List + Export ───────────────────────────────────────────────
