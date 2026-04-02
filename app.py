@@ -59,6 +59,7 @@ AGG_MAP = {"Sum": "SUM", "Max": "MAX", "Min": "MAX"}
 
 FORMAT_TYPES = [
     "Currency – auto M/B scale",
+    "Number – auto M/B scale",
     "Percentage",
     "Number",
     "Currency – plain (no scaling)",
@@ -67,12 +68,13 @@ FORMAT_TYPES = [
 ]
 
 FORMAT_EXAMPLES = {
-    "Currency – auto M/B scale": "$1.2M  /  $4.5B  /  $999",
-    "Percentage":                 "12.3%",
-    "Number":                     "1,234.5",
+    "Currency – auto M/B scale":  "$1.2M  /  $4.5B  /  $999",
+    "Number – auto M/B scale":    "1.2M  /  4.5B  /  999",
+    "Percentage":                  "12.3%",
+    "Number":                      "1,234.5",
     "Currency – plain (no scaling)": "$1,234.56",
-    "Date":                       "03/26/26",
-    "Custom":                     "(enter your own format string)",
+    "Date":                        "03/26/26",
+    "Custom":                      "(enter your own format string)",
 }
 
 def build_format_string(fmt_type: str, decimals: int, custom: str = "") -> str:
@@ -81,11 +83,16 @@ def build_format_string(fmt_type: str, decimals: int, custom: str = "") -> str:
     dec = f".{d}" if decimals > 0 else ""
 
     if fmt_type == "Currency – auto M/B scale":
-        # Billions / Millions / base — all with same decimal precision
         return (
             f'[>=1000000000]$#,##0{dec},,,"B";'
             f'[>=1000000]$#,##0{dec},,"M";'
             f'$#,##0{dec}'
+        )
+    elif fmt_type == "Number – auto M/B scale":
+        return (
+            f'[>=1000000000]#,##0{dec},,,"B";'
+            f'[>=1000000]#,##0{dec},,"M";'
+            f'#,##0{dec}'
         )
     elif fmt_type == "Percentage":
         return f'#,##0{dec}\\%'
@@ -292,8 +299,8 @@ with tab_single:
             label_visibility="collapsed", key="fmt_type",
         )
     with fmt_col2:
-        if fmt_type in ("Currency – auto M/B scale", "Percentage", "Number",
-                        "Currency – plain (no scaling)"):
+        if fmt_type in ("Currency – auto M/B scale", "Number – auto M/B scale",
+                        "Percentage", "Number", "Currency – plain (no scaling)"):
             decimals = st.selectbox(
                 "Decimal places", [0, 1, 2],
                 index=1, label_visibility="collapsed", key="fmt_decimals",
